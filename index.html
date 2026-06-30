@@ -30,12 +30,12 @@
   <div class="max-w-4xl mx-auto px-4 py-4 pb-20">
     <!-- 顶部标题 -->
     <div class="flex items-center justify-between mb-4">
-      <div class="flex-1"></div>
-      <div class="text-center flex-1">
-        <h1 class="text-2xl font-bold text-gray-800"><i class="fas fa-clock mr-2 text-blue-500"></i>出行提醒助手</h1>
-        <p class="text-sm text-gray-500 mt-1">准时出发，不再迟到</p>
+      <div class="w-10 flex-shrink-0"></div>
+      <div class="text-center flex-1 min-w-0">
+        <h1 class="text-lg sm:text-xl font-bold text-gray-800 whitespace-nowrap overflow-hidden text-ellipsis"><i class="fas fa-clock mr-1 text-blue-500"></i>出行提醒助手</h1>
+        <p class="text-xs sm:text-sm text-gray-500 mt-1 whitespace-nowrap overflow-hidden text-ellipsis">准时出发，不再迟到</p>
       </div>
-      <div class="flex-1 flex justify-end">
+      <div class="w-10 flex-shrink-0 flex justify-end">
         <button onclick="showHelpModal()" class="w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center hover:bg-gray-200 transition text-gray-500">
           <i class="fas fa-question"></i>
         </button>
@@ -484,6 +484,21 @@
       transitRoute = new AMap.Transfer({ map: map, hideMarkers: false, city: '全国' });
       walkingRoute = new AMap.Walking({ map: map, hideMarkers: false });
       ridingRoute = new AMap.Riding({ map: map, hideMarkers: false });
+
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          function(position) {
+            const lng = position.coords.longitude;
+            const lat = position.coords.latitude;
+            if (map) {
+              map.setCenter([lng, lat]);
+              map.setZoom(14);
+            }
+          },
+          function() {},
+          { enableHighAccuracy: false, timeout: 5000, maximumAge: 300000 }
+        );
+      }
     }
 
     function onAddressInput(type) {
@@ -1105,40 +1120,60 @@
           const lng = position.coords.longitude;
           const lat = position.coords.latitude;
           
-          if (geocoder) {
-            geocoder.getAddress([lng, lat], function(status, result) {
-              btn.innerHTML = originalHTML;
-              btn.disabled = false;
-              
-              if (status === 'complete' && result.regeocode) {
-                const address = result.regeocode.formattedAddress;
-                document.getElementById(type + '-input').value = address;
-                
-                if (type === 'start') {
-                  startLocation = [lng, lat];
-                  startAddress = address;
-                } else {
-                  endLocation = [lng, lat];
-                  endAddress = address;
-                }
-                
-                if (map) {
-                  map.setCenter([lng, lat]);
-                  map.setZoom(15);
-                }
-                
-                if (startLocation && endLocation) {
-                  planRoute();
-                }
-              } else {
-                alert('地址解析失败');
-              }
-            });
-          } else {
+          if (!geocoder) {
             btn.innerHTML = originalHTML;
             btn.disabled = false;
             alert('地图未加载完成，请稍后再试');
+            return;
           }
+
+          const lnglat = new AMap.LngLat(lng, lat);
+          geocoder.getAddress(lnglat, function(status, result) {
+            btn.innerHTML = originalHTML;
+            btn.disabled = false;
+            
+            if (status === 'complete' && result.regeocode) {
+              const address = result.regeocode.formattedAddress;
+              document.getElementById(type + '-input').value = address;
+              
+              if (type === 'start') {
+                startLocation = [lng, lat];
+                startAddress = address;
+              } else {
+                endLocation = [lng, lat];
+                endAddress = address;
+              }
+              
+              if (map) {
+                map.setCenter([lng, lat]);
+                map.setZoom(15);
+              }
+              
+              if (startLocation && endLocation) {
+                planRoute();
+              }
+            } else {
+              const simpleAddr = lng.toFixed(5) + ', ' + lat.toFixed(5);
+              document.getElementById(type + '-input').value = simpleAddr;
+              
+              if (type === 'start') {
+                startLocation = [lng, lat];
+                startAddress = simpleAddr;
+              } else {
+                endLocation = [lng, lat];
+                endAddress = simpleAddr;
+              }
+              
+              if (map) {
+                map.setCenter([lng, lat]);
+                map.setZoom(15);
+              }
+              
+              if (startLocation && endLocation) {
+                planRoute();
+              }
+            }
+          });
         },
         function(error) {
           btn.innerHTML = originalHTML;
@@ -1150,7 +1185,7 @@
               msg = '您拒绝了定位请求，请在浏览器设置中允许定位';
               break;
             case error.POSITION_UNAVAILABLE:
-              msg = '位置信息不可用';
+              msg = '位置信息不可用，请检查定位权限';
               break;
             case error.TIMEOUT:
               msg = '定位超时，请重试';
@@ -1160,8 +1195,8 @@
         },
         {
           enableHighAccuracy: true,
-          timeout: 10000,
-          maximumAge: 0
+          timeout: 15000,
+          maximumAge: 60000
         }
       );
     }
