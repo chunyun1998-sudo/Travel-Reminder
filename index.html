@@ -510,29 +510,87 @@
       const suggestions = document.getElementById(type + '-suggestions');
       const keyword = input.value.trim();
 
-      if (!keyword || !autoComplete) {
+      if (!keyword || keyword.length < 1) {
         suggestions.classList.add('hidden');
         return;
       }
 
-      autoComplete.search(keyword, function(status, result) {
-        if (status === 'complete' && result.tips && result.tips.length > 0) {
-          let html = '';
-          result.tips.forEach(function(tip) {
-            if (tip.location) {
-              html += `<div class="px-4 py-3 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-b-0" 
-                            onclick="selectAddress('${type}', '${tip.name.replace(/'/g, "\\'")}', ${tip.location.lng}, ${tip.location.lat}, '${(tip.district || '').replace(/'/g, "\\'")}')">
-                <p class="text-sm text-gray-800">${tip.name}</p>
-                <p class="text-xs text-gray-500">${tip.district || ''}</p>
-              </div>`;
+      if (placeSearch) {
+        placeSearch.search(keyword, function(status, result) {
+          if (status === 'complete' && result.poiList && result.poiList.pois && result.poiList.pois.length > 0) {
+            let html = '';
+            result.poiList.pois.forEach(function(poi) {
+              if (poi.location) {
+                const nameSafe = poi.name.replace(/'/g, "\\'");
+                const addrSafe = (poi.address || '').replace(/'/g, "\\'");
+                html += `<div class="px-4 py-3 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-b-0" 
+                              onclick="selectAddress('${type}', '${nameSafe}', ${poi.location.lng}, ${poi.location.lat}, '${addrSafe}')">
+                  <p class="text-sm text-gray-800">${poi.name}</p>
+                  <p class="text-xs text-gray-500">${poi.address || poi.pname + poi.cityname + poi.adname}</p>
+                </div>`;
+              }
+            });
+            if (html) {
+              suggestions.innerHTML = html;
+              suggestions.classList.remove('hidden');
+            } else {
+              suggestions.classList.add('hidden');
             }
-          });
-          suggestions.innerHTML = html;
-          suggestions.classList.remove('hidden');
-        } else {
-          suggestions.classList.add('hidden');
-        }
-      });
+          } else if (autoComplete) {
+            autoComplete.search(keyword, function(status2, result2) {
+              if (status2 === 'complete' && result2.tips && result2.tips.length > 0) {
+                let html = '';
+                result2.tips.forEach(function(tip) {
+                  if (tip.location) {
+                    const nameSafe = tip.name.replace(/'/g, "\\'");
+                    const distSafe = (tip.district || '').replace(/'/g, "\\'");
+                    html += `<div class="px-4 py-3 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-b-0" 
+                                  onclick="selectAddress('${type}', '${nameSafe}', ${tip.location.lng}, ${tip.location.lat}, '${distSafe}')">
+                      <p class="text-sm text-gray-800">${tip.name}</p>
+                      <p class="text-xs text-gray-500">${tip.district || ''}</p>
+                    </div>`;
+                  }
+                });
+                if (html) {
+                  suggestions.innerHTML = html;
+                  suggestions.classList.remove('hidden');
+                } else {
+                  suggestions.classList.add('hidden');
+                }
+              } else {
+                suggestions.classList.add('hidden');
+              }
+            });
+          } else {
+            suggestions.classList.add('hidden');
+          }
+        });
+      } else if (autoComplete) {
+        autoComplete.search(keyword, function(status, result) {
+          if (status === 'complete' && result.tips && result.tips.length > 0) {
+            let html = '';
+            result.tips.forEach(function(tip) {
+              if (tip.location) {
+                const nameSafe = tip.name.replace(/'/g, "\\'");
+                const distSafe = (tip.district || '').replace(/'/g, "\\'");
+                html += `<div class="px-4 py-3 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-b-0" 
+                              onclick="selectAddress('${type}', '${nameSafe}', ${tip.location.lng}, ${tip.location.lat}, '${distSafe}')">
+                  <p class="text-sm text-gray-800">${tip.name}</p>
+                  <p class="text-xs text-gray-500">${tip.district || ''}</p>
+                </div>`;
+              }
+            });
+            if (html) {
+              suggestions.innerHTML = html;
+              suggestions.classList.remove('hidden');
+            } else {
+              suggestions.classList.add('hidden');
+            }
+          } else {
+            suggestions.classList.add('hidden');
+          }
+        });
+      }
     }
 
     function selectAddress(type, name, lng, lat, district) {
@@ -570,65 +628,109 @@
     }
 
     function planRoute() {
-      if (!startLocation || !endLocation) {
-        alert('请先选择出发地和目的地');
-        return;
-      }
+      const doPlan = function() {
+        if (!startLocation || !endLocation) {
+          alert('请先选择出发地和目的地');
+          return;
+        }
 
-      const planBtn = document.getElementById('plan-route-btn');
-      if (planBtn) {
-        planBtn.disabled = true;
-        planBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>规划中...';
-      }
+        const planBtn = document.getElementById('plan-route-btn');
+        if (planBtn) {
+          planBtn.disabled = true;
+          planBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>规划中...';
+        }
 
-      clearAllRoutes();
+        clearAllRoutes();
 
-      const start = startLocation;
-      const end = endLocation;
+        const start = startLocation;
+        const end = endLocation;
 
-      let routeService;
-      switch (currentTransportMode) {
-        case 'driving':
-          routeService = drivingRoute;
-          break;
-        case 'transit':
-        case 'subway':
-          routeService = transitRoute;
-          break;
-        case 'walking':
-          routeService = walkingRoute;
-          break;
-        case 'riding':
-          routeService = ridingRoute;
-          break;
-        default:
-          routeService = drivingRoute;
-      }
+        let routeService;
+        switch (currentTransportMode) {
+          case 'driving':
+            routeService = drivingRoute;
+            break;
+          case 'transit':
+          case 'subway':
+            routeService = transitRoute;
+            break;
+          case 'walking':
+            routeService = walkingRoute;
+            break;
+          case 'riding':
+            routeService = ridingRoute;
+            break;
+          default:
+            routeService = drivingRoute;
+        }
 
-      const onComplete = function(data) {
-        handleRouteResult(data);
-      };
-      const onError = function(data) {
-        console.error('路线规划失败', data);
-        alert('路线规划失败，请检查地址是否正确');
-      };
-
-      if (currentTransportMode === 'transit' || currentTransportMode === 'subway') {
-        routeService.search(start, end, function(status, result) {
-          if (status === 'complete') {
-            handleRouteResult(result, 'transit');
-          } else {
-            onError(result);
+        const onError = function(data) {
+          console.error('路线规划失败', data);
+          if (planBtn) {
+            planBtn.disabled = false;
+            planBtn.innerHTML = '<i class="fas fa-route mr-2"></i>规划路线';
           }
-        });
+          alert('路线规划失败，请检查地址是否正确');
+        };
+
+        if (currentTransportMode === 'transit' || currentTransportMode === 'subway') {
+          routeService.search(start, end, function(status, result) {
+            if (status === 'complete') {
+              handleRouteResult(result, 'transit');
+            } else {
+              onError(result);
+            }
+          });
+        } else {
+          routeService.search(start, end, function(status, result) {
+            if (status === 'complete') {
+              handleRouteResult(result, currentTransportMode);
+            } else {
+              onError(result);
+            }
+          });
+        }
+      };
+
+      let needGeocode = false;
+      const startVal = document.getElementById('start-input').value.trim();
+      const endVal = document.getElementById('end-input').value.trim();
+
+      if (startVal && !startLocation) needGeocode = true;
+      if (endVal && !endLocation) needGeocode = true;
+
+      if (needGeocode && geocoder) {
+        let doneCount = 0;
+        const checkDone = function() {
+          doneCount++;
+          if (doneCount >= (startVal && !startLocation ? 1 : 0) + (endVal && !endLocation ? 1 : 0)) {
+            doPlan();
+          }
+        };
+
+        if (startVal && !startLocation) {
+          geocoder.getLocation(startVal, function(status, result) {
+            if (status === 'complete' && result.geocodes && result.geocodes.length > 0) {
+              const loc = result.geocodes[0].location;
+              startLocation = [loc.lng, loc.lat];
+              startAddress = startVal;
+            }
+            checkDone();
+          });
+        }
+
+        if (endVal && !endLocation) {
+          geocoder.getLocation(endVal, function(status, result) {
+            if (status === 'complete' && result.geocodes && result.geocodes.length > 0) {
+              const loc = result.geocodes[0].location;
+              endLocation = [loc.lng, loc.lat];
+              endAddress = endVal;
+            }
+            checkDone();
+          });
+        }
       } else {
-        routeService.search(start, end, function(status, result) {
-          if (status === 'complete') {
-            handleRouteResult(result, currentTransportMode);
-          } else {
-            onError(result);
-          }
-        });
+        doPlan();
       }
     }
 
@@ -1154,27 +1256,29 @@
             return;
           }
 
-          const lnglat = new AMap.LngLat(lng, lat);
-          geocoder.getAddress(lnglat, function(status, result) {
+          geocoder.getAddress(lng + ',' + lat, function(status, result) {
             btn.innerHTML = originalHTML;
             btn.disabled = false;
             
             if (status === 'complete' && result.regeocode && result.regeocode.formattedAddress) {
-              let address = result.regeocode.formattedAddress;
+              const addressComponent = result.regeocode.addressComponent || {};
+              const province = addressComponent.province || '';
+              let city = addressComponent.city || '';
+              const district = addressComponent.district || '';
+              const township = addressComponent.township || '';
+              const street = addressComponent.street || '';
               
-              const province = result.regeocode.addressComponent.province || '';
-              const city = result.regeocode.addressComponent.city || result.regeocode.addressComponent.province || '';
-              const district = result.regeocode.addressComponent.district || '';
-              const township = result.regeocode.addressComponent.township || '';
+              if (!city && province) city = province;
               
-              if (city && address.includes(city)) {
-                address = address.replace(province, '').replace(city, city);
+              let address = '';
+              if (province === city) {
+                address = province + district + township + street;
+              } else {
+                address = city + district + township + street;
               }
               
-              if (province === '北京市' || province === '天津市' || province === '上海市' || province === '重庆市') {
-                address = province + (district ? district : '') + (township ? township : '');
-              } else if (city) {
-                address = city + (district ? district : '') + (township ? township : '');
+              if (!address || address.length < 2) {
+                address = result.regeocode.formattedAddress;
               }
               
               document.getElementById(type + '-input').value = address;
