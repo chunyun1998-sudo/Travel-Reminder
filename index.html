@@ -116,6 +116,10 @@
             <div id="end-suggestions" class="hidden absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-50 max-h-60 overflow-y-auto"></div>
           </div>
         </div>
+        
+        <button onclick="planRoute()" id="plan-route-btn" class="w-full mt-4 py-3 bg-blue-500 text-white rounded-xl font-semibold hover:bg-blue-600 transition disabled:opacity-50 disabled:cursor-not-allowed">
+          <i class="fas fa-route mr-2"></i>规划路线
+        </button>
       </div>
     </div>
 
@@ -154,16 +158,16 @@
     <!-- 时间与提醒设置 -->
     <div class="bg-white rounded-xl shadow-sm p-4 mb-4">
       <h2 class="text-sm font-semibold text-gray-700 mb-3"><i class="fas fa-bell text-orange-500 mr-1"></i>提醒设置</h2>
-      <div class="grid grid-cols-2 gap-4 mb-4">
-        <div>
+      <div class="flex flex-col sm:flex-row sm:gap-4 mb-4">
+        <div class="flex-1 mb-2 sm:mb-0">
           <label class="text-xs text-gray-500 block mb-1">目标到达时间</label>
-          <input type="time" id="arrival-time" 
-                 class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-400">
+          <input type="time" id="arrival-time"
+                 class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-400 box-border">
         </div>
-        <div>
+        <div class="flex-1">
           <label class="text-xs text-gray-500 block mb-1">提前提醒</label>
-          <select id="advance-time" 
-                  class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-400 appearance-none">
+          <select id="advance-time"
+                  class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-400 box-border">
             <option value="5">提前 5 分钟</option>
             <option value="10" selected>提前 10 分钟</option>
             <option value="15">提前 15 分钟</option>
@@ -566,7 +570,16 @@
     }
 
     function planRoute() {
-      if (!startLocation || !endLocation) return;
+      if (!startLocation || !endLocation) {
+        alert('请先选择出发地和目的地');
+        return;
+      }
+
+      const planBtn = document.getElementById('plan-route-btn');
+      if (planBtn) {
+        planBtn.disabled = true;
+        planBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>规划中...';
+      }
 
       clearAllRoutes();
 
@@ -620,6 +633,8 @@
     }
 
     function handleRouteResult(result, mode) {
+      const planBtn = document.getElementById('plan-route-btn');
+      
       let routes;
       if (mode === 'transit' || mode === 'subway') {
         routes = result.plans || [];
@@ -636,8 +651,20 @@
       }
 
       if (routes.length === 0) {
+        if (planBtn) {
+          planBtn.disabled = false;
+          planBtn.innerHTML = '<i class="fas fa-route mr-2"></i>规划路线';
+        }
         alert('未找到合适的路线');
         return;
+      }
+
+      if (planBtn) {
+        planBtn.disabled = false;
+        planBtn.innerHTML = '<i class="fas fa-check mr-2"></i>规划完成';
+        setTimeout(() => {
+          planBtn.innerHTML = '<i class="fas fa-route mr-2"></i>重新规划';
+        }, 2000);
       }
 
       addToHistory();
@@ -1132,8 +1159,24 @@
             btn.innerHTML = originalHTML;
             btn.disabled = false;
             
-            if (status === 'complete' && result.regeocode) {
-              const address = result.regeocode.formattedAddress;
+            if (status === 'complete' && result.regeocode && result.regeocode.formattedAddress) {
+              let address = result.regeocode.formattedAddress;
+              
+              const province = result.regeocode.addressComponent.province || '';
+              const city = result.regeocode.addressComponent.city || result.regeocode.addressComponent.province || '';
+              const district = result.regeocode.addressComponent.district || '';
+              const township = result.regeocode.addressComponent.township || '';
+              
+              if (city && address.includes(city)) {
+                address = address.replace(province, '').replace(city, city);
+              }
+              
+              if (province === '北京市' || province === '天津市' || province === '上海市' || province === '重庆市') {
+                address = province + (district ? district : '') + (township ? township : '');
+              } else if (city) {
+                address = city + (district ? district : '') + (township ? township : '');
+              }
+              
               document.getElementById(type + '-input').value = address;
               
               if (type === 'start') {
