@@ -1,0 +1,1204 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>出行提醒助手</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <style>
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; padding: 0; }
+    #map-container { width: 100%; height: 400px; }
+    .amap-logo, .amap-copyright { display: none !important; }
+    .alarm-modal { animation: pulse 1s infinite; }
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.02); }
+    }
+    @keyframes shake {
+      0%, 100% { transform: translateX(0); }
+      25% { transform: translateX(-10px); }
+      75% { transform: translateX(10px); }
+    }
+    .shake { animation: shake 0.5s infinite; }
+    .scrollbar-hide::-webkit-scrollbar { display: none; }
+    .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+  </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+  <div class="max-w-4xl mx-auto px-4 py-4 pb-20">
+    <!-- 顶部标题 -->
+    <div class="flex items-center justify-between mb-4">
+      <div class="flex-1"></div>
+      <div class="text-center flex-1">
+        <h1 class="text-2xl font-bold text-gray-800"><i class="fas fa-clock mr-2 text-blue-500"></i>出行提醒助手</h1>
+        <p class="text-sm text-gray-500 mt-1">准时出发，不再迟到</p>
+      </div>
+      <div class="flex-1 flex justify-end">
+        <button onclick="showHelpModal()" class="w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center hover:bg-gray-200 transition text-gray-500">
+          <i class="fas fa-question"></i>
+        </button>
+      </div>
+    </div>
+
+    <!-- 高德 Key 配置提示 -->
+    <div id="key-config-tip" class="hidden bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
+      <div class="flex items-start">
+        <i class="fas fa-exclamation-triangle text-yellow-500 mt-1 mr-3"></i>
+        <div class="flex-1">
+          <h3 class="font-medium text-yellow-800">请配置高德地图 API Key</h3>
+          <p class="text-sm text-yellow-700 mt-1">首次使用请在下方输入您的高德地图 Key，或直接修改 HTML 文件中的 AMAP_KEY 变量。</p>
+          <div class="flex gap-2 mt-3">
+            <input type="text" id="key-input" placeholder="请输入高德地图 Web端(JS API) Key" 
+                   class="flex-1 px-3 py-2 border border-yellow-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-yellow-400">
+            <button onclick="saveAmapKey()" class="px-4 py-2 bg-yellow-500 text-white rounded-lg text-sm hover:bg-yellow-600 transition">
+              保存
+            </button>
+          </div>
+          <p class="text-xs text-yellow-600 mt-2">
+            <i class="fas fa-info-circle mr-1"></i>
+            Key 仅保存在本地浏览器中，不会上传到任何服务器。
+            <a href="https://lbs.amap.com/api/javascript-api/guide/abc/prepare" target="_blank" class="underline">如何申请 Key？</a>
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <!-- 常用地址 -->
+    <div class="bg-white rounded-xl shadow-sm p-4 mb-4">
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="text-sm font-semibold text-gray-700"><i class="fas fa-star text-yellow-400 mr-1"></i>常用地址</h2>
+        <button onclick="showAddFavoriteModal()" class="text-blue-500 text-sm hover:text-blue-600 transition">
+          <i class="fas fa-plus mr-1"></i>添加
+        </button>
+      </div>
+      <div id="favorite-list" class="flex gap-2 overflow-x-auto scrollbar-hide pb-1">
+        <span class="text-gray-400 text-sm">暂无常用地址</span>
+      </div>
+    </div>
+
+    <!-- 地址输入区 -->
+    <div class="bg-white rounded-xl shadow-sm p-4 mb-4">
+      <div class="space-y-3">
+        <div class="flex items-center gap-3">
+          <div class="w-3 h-3 bg-green-500 rounded-full flex-shrink-0"></div>
+          <div class="flex-1 relative">
+            <input type="text" id="start-input" placeholder="选择出发地" 
+                   class="w-full px-4 py-3 pr-12 bg-gray-50 border border-gray-200 rounded-xl text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent"
+                   onfocus="currentFocus = 'start'"
+                   oninput="onAddressInput('start')">
+            <button onclick="autoLocate('start')" title="使用当前位置"
+                    class="absolute right-3 top-1/2 -translate-y-1/2 w-8 h-8 flex items-center justify-center text-blue-500 hover:text-blue-600 hover:bg-blue-50 rounded-full transition">
+              <i class="fas fa-crosshairs"></i>
+            </button>
+            <div id="start-suggestions" class="hidden absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-50 max-h-60 overflow-y-auto"></div>
+          </div>
+        </div>
+        
+        <div class="flex justify-center">
+          <button onclick="swapAddresses()" class="w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center hover:bg-gray-200 transition text-gray-500">
+            <i class="fas fa-exchange-alt rotate-90"></i>
+          </button>
+        </div>
+        
+        <div class="flex items-center gap-3">
+          <div class="w-3 h-3 bg-red-500 rounded-full flex-shrink-0"></div>
+          <div class="flex-1 relative">
+            <input type="text" id="end-input" placeholder="选择目的地" 
+                   class="w-full px-4 py-3 pr-12 bg-gray-50 border border-gray-200 rounded-xl text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent"
+                   onfocus="currentFocus = 'end'"
+                   oninput="onAddressInput('end')">
+            <button onclick="autoLocate('end')" title="使用当前位置"
+                    class="absolute right-3 top-1/2 -translate-y-1/2 w-8 h-8 flex items-center justify-center text-blue-500 hover:text-blue-600 hover:bg-blue-50 rounded-full transition">
+              <i class="fas fa-crosshairs"></i>
+            </button>
+            <div id="end-suggestions" class="hidden absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-50 max-h-60 overflow-y-auto"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 交通方式选择 -->
+    <div class="bg-white rounded-xl shadow-sm p-4 mb-4">
+      <h2 class="text-sm font-semibold text-gray-700 mb-3"><i class="fas fa-car text-blue-500 mr-1"></i>交通方式</h2>
+      <div class="grid grid-cols-5 gap-2">
+        <button onclick="setTransportMode('driving')" id="btn-driving" 
+                class="transport-btn flex flex-col items-center py-3 px-2 rounded-xl transition bg-blue-500 text-white">
+          <i class="fas fa-car text-xl mb-1"></i>
+          <span class="text-xs">驾车</span>
+        </button>
+        <button onclick="setTransportMode('transit')" id="btn-transit" 
+                class="transport-btn flex flex-col items-center py-3 px-2 rounded-xl transition bg-gray-100 text-gray-600 hover:bg-gray-200">
+          <i class="fas fa-bus text-xl mb-1"></i>
+          <span class="text-xs">公交</span>
+        </button>
+        <button onclick="setTransportMode('subway')" id="btn-subway" 
+                class="transport-btn flex flex-col items-center py-3 px-2 rounded-xl transition bg-gray-100 text-gray-600 hover:bg-gray-200">
+          <i class="fas fa-subway text-xl mb-1"></i>
+          <span class="text-xs">地铁</span>
+        </button>
+        <button onclick="setTransportMode('walking')" id="btn-walking" 
+                class="transport-btn flex flex-col items-center py-3 px-2 rounded-xl transition bg-gray-100 text-gray-600 hover:bg-gray-200">
+          <i class="fas fa-walking text-xl mb-1"></i>
+          <span class="text-xs">步行</span>
+        </button>
+        <button onclick="setTransportMode('riding')" id="btn-riding" 
+                class="transport-btn flex flex-col items-center py-3 px-2 rounded-xl transition bg-gray-100 text-gray-600 hover:bg-gray-200">
+          <i class="fas fa-bicycle text-xl mb-1"></i>
+          <span class="text-xs">骑行</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- 时间与提醒设置 -->
+    <div class="bg-white rounded-xl shadow-sm p-4 mb-4">
+      <h2 class="text-sm font-semibold text-gray-700 mb-3"><i class="fas fa-bell text-orange-500 mr-1"></i>提醒设置</h2>
+      <div class="grid grid-cols-2 gap-4 mb-4">
+        <div>
+          <label class="text-xs text-gray-500 block mb-1">目标到达时间</label>
+          <input type="time" id="arrival-time" 
+                 class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-400">
+        </div>
+        <div>
+          <label class="text-xs text-gray-500 block mb-1">提前提醒</label>
+          <select id="advance-time" 
+                  class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-400 appearance-none">
+            <option value="5">提前 5 分钟</option>
+            <option value="10" selected>提前 10 分钟</option>
+            <option value="15">提前 15 分钟</option>
+            <option value="20">提前 20 分钟</option>
+            <option value="25">提前 25 分钟</option>
+            <option value="30">提前 30 分钟</option>
+            <option value="custom">自定义...</option>
+          </select>
+        </div>
+      </div>
+      <div id="custom-advance-wrap" class="hidden mb-4">
+        <label class="text-xs text-gray-500 block mb-1">自定义提前时间（分钟）</label>
+        <input type="number" id="custom-advance" min="1" max="180" value="10"
+               class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-400">
+      </div>
+      
+      <!-- 路线信息展示 -->
+      <div id="route-info" class="hidden bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-4 mb-4">
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <p class="text-xs text-gray-500">预计耗时</p>
+            <p id="info-duration" class="text-lg font-bold text-gray-800">--</p>
+          </div>
+          <div>
+            <p class="text-xs text-gray-500">总距离</p>
+            <p id="info-distance" class="text-lg font-bold text-gray-800">--</p>
+          </div>
+          <div>
+            <p class="text-xs text-gray-500">预计出发时间</p>
+            <p id="info-departure" class="text-lg font-bold text-green-600">--</p>
+          </div>
+          <div>
+            <p class="text-xs text-gray-500">预计到达时间</p>
+            <p id="info-arrival" class="text-lg font-bold text-blue-600">--</p>
+          </div>
+        </div>
+        <div id="info-traffic" class="mt-3 pt-3 border-t border-blue-100">
+          <p class="text-xs text-gray-500">路况情况</p>
+          <p id="traffic-status" class="text-sm text-gray-700 mt-1">--</p>
+        </div>
+      </div>
+      
+      <button id="set-alarm-btn" onclick="setAlarm()" 
+              class="w-full py-4 bg-gradient-to-r from-orange-500 to-red-500 text-white rounded-xl font-semibold text-lg shadow-lg hover:shadow-xl transition transform hover:scale-[1.02] disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none">
+        <i class="fas fa-bell mr-2"></i>设置出发提醒
+      </button>
+      
+      <!-- 倒计时显示 -->
+      <div id="countdown-display" class="hidden mt-4 text-center">
+        <p class="text-sm text-gray-500 mb-1">距离出发还有</p>
+        <p id="countdown-text" class="text-3xl font-bold text-orange-500">--:--:--</p>
+        <button onclick="cancelAlarm()" class="mt-3 text-sm text-gray-500 hover:text-red-500 transition">
+          <i class="fas fa-times-circle mr-1"></i>取消提醒
+        </button>
+      </div>
+    </div>
+
+    <!-- 地图区域 -->
+    <div class="bg-white rounded-xl shadow-sm overflow-hidden mb-4">
+      <div id="map-container"></div>
+    </div>
+
+    <!-- 历史记录 -->
+    <div class="bg-white rounded-xl shadow-sm p-4">
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="text-sm font-semibold text-gray-700"><i class="fas fa-history text-gray-400 mr-1"></i>历史记录</h2>
+        <button onclick="clearHistory()" class="text-gray-400 text-sm hover:text-red-500 transition">
+          <i class="fas fa-trash-alt mr-1"></i>清空
+        </button>
+      </div>
+      <div id="history-list" class="space-y-2">
+        <p class="text-gray-400 text-sm text-center py-4">暂无历史记录</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- 添加常用地址弹窗 -->
+  <div id="add-favorite-modal" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl w-full max-w-sm p-6">
+      <h3 class="text-lg font-bold text-gray-800 mb-4">添加常用地址</h3>
+      <div class="space-y-4">
+        <div>
+          <label class="text-sm text-gray-600 block mb-1">地址名称</label>
+          <input type="text" id="fav-name" placeholder="如：家、公司、学校" 
+                 class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-400">
+        </div>
+        <div>
+          <label class="text-sm text-gray-600 block mb-1">详细地址</label>
+          <input type="text" id="fav-address" placeholder="输入具体地址" 
+                 class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-400"
+                 oninput="onFavoriteAddressInput()">
+          <div id="fav-suggestions" class="hidden mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-40 overflow-y-auto"></div>
+        </div>
+      </div>
+      <div class="flex gap-3 mt-6">
+        <button onclick="hideAddFavoriteModal()" class="flex-1 py-3 bg-gray-100 text-gray-700 rounded-xl font-medium hover:bg-gray-200 transition">
+          取消
+        </button>
+        <button onclick="saveFavorite()" class="flex-1 py-3 bg-blue-500 text-white rounded-xl font-medium hover:bg-blue-600 transition">
+          保存
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 闹钟提醒弹窗 -->
+  <div id="alarm-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div class="absolute inset-0 bg-gradient-to-br from-red-600 to-orange-500"></div>
+    <div class="relative z-10 text-center alarm-modal">
+      <div class="w-32 h-32 mx-auto mb-6 bg-white/20 rounded-full flex items-center justify-center shake">
+        <i class="fas fa-bell text-6xl text-white"></i>
+      </div>
+      <h2 class="text-4xl font-bold text-white mb-2">该出发了！</h2>
+      <p id="alarm-message" class="text-xl text-white/90 mb-8">前往目的地的时间到了</p>
+      <div class="bg-white/20 backdrop-blur rounded-2xl p-4 mb-8 max-w-xs mx-auto">
+        <p class="text-white/80 text-sm mb-1">目的地</p>
+        <p id="alarm-destination" class="text-white font-semibold text-lg">--</p>
+      </div>
+      <button onclick="stopAlarm()" 
+              class="px-12 py-4 bg-white text-red-500 rounded-full font-bold text-lg shadow-2xl hover:bg-gray-100 transition transform hover:scale-105">
+        <i class="fas fa-check-circle mr-2"></i>我知道了
+      </button>
+    </div>
+  </div>
+
+  <!-- 帮助弹窗 -->
+  <div id="help-modal" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl w-full max-w-lg max-h-[80vh] overflow-hidden flex flex-col">
+      <div class="p-6 border-b border-gray-100 flex items-center justify-between">
+        <h3 class="text-lg font-bold text-gray-800"><i class="fas fa-question-circle text-blue-500 mr-2"></i>使用帮助</h3>
+        <button onclick="hideHelpModal()" class="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center hover:bg-gray-200 transition text-gray-500">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+      <div class="p-6 overflow-y-auto flex-1 space-y-6">
+        <div>
+          <h4 class="font-semibold text-gray-800 mb-2">🚀 快速开始</h4>
+          <ol class="text-sm text-gray-600 space-y-2 list-decimal list-inside">
+            <li>首次使用请配置高德地图 API Key</li>
+            <li>输入出发地和目的地（或从常用地址/历史记录选择）</li>
+            <li>选择交通方式</li>
+            <li>设置目标到达时间和提前提醒时长</li>
+            <li>点击"设置出发提醒"，保持页面打开即可</li>
+          </ol>
+        </div>
+        
+        <div>
+          <h4 class="font-semibold text-gray-800 mb-2">🔑 如何申请高德地图 Key？</h4>
+          <ol class="text-sm text-gray-600 space-y-2 list-decimal list-inside">
+            <li>打开 <a href="https://lbs.amap.com/" target="_blank" class="text-blue-500 underline">高德开放平台</a> 并注册登录</li>
+            <li>进入"控制台" → "应用管理" → "我的应用"</li>
+            <li>点击"创建新应用"，填写应用名称</li>
+            <li>点击"添加 Key"，服务平台选择"Web端(JS API)"</li>
+            <li>复制生成的 Key 填入本页面即可</li>
+          </ol>
+          <p class="text-xs text-gray-400 mt-2">💡 建议在高德控制台配置域名白名单，防止 Key 被盗用</p>
+        </div>
+        
+        <div>
+          <h4 class="font-semibold text-gray-800 mb-2">⭐ 常用地址</h4>
+          <p class="text-sm text-gray-600">
+            点击"+添加"按钮可以保存常用地址（如家、公司）。<br>
+            使用方法：先点击出发地或目的地输入框，再点击常用地址标签即可快速填入。
+          </p>
+        </div>
+        
+        <div>
+          <h4 class="font-semibold text-gray-800 mb-2">⏰ 提醒说明</h4>
+          <ul class="text-sm text-gray-600 space-y-1 list-disc list-inside">
+            <li>设置提醒后请保持页面打开</li>
+            <li>到点会全屏弹窗 + 响铃 + 震动（手机端）</li>
+            <li>点击"我知道了"关闭提醒</li>
+            <li>关闭页面后提醒会失效</li>
+          </ul>
+        </div>
+        
+        <div>
+          <h4 class="font-semibold text-gray-800 mb-2">📤 部署到 GitHub Pages</h4>
+          <ol class="text-sm text-gray-600 space-y-2 list-decimal list-inside">
+            <li>在 GitHub 创建一个新仓库</li>
+            <li>将 index.html 文件上传到仓库</li>
+            <li>进入仓库 Settings → Pages</li>
+            <li>Source 选择 main 分支，保存</li>
+            <li>稍等几分钟，访问 <code class="bg-gray-100 px-1 rounded">https://你的用户名.github.io/仓库名/</code> 即可</li>
+          </ol>
+          <p class="text-xs text-gray-400 mt-2">
+            💡 也可以直接修改 index.html 中的 AMAP_KEY 变量，把 Key 写死在代码里，这样别人打开就不用再输入 Key 了
+          </p>
+        </div>
+        
+        <div>
+          <h4 class="font-semibold text-gray-800 mb-2">💾 数据存储</h4>
+          <p class="text-sm text-gray-600">
+            所有数据（常用地址、历史记录、Key）都保存在浏览器本地 localStorage 中，不会上传到任何服务器。
+            清除浏览器数据或换设备后数据会丢失。
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ============== 配置区 ==============
+    // 请将您的高德地图 Key 替换到这里
+    let AMAP_KEY = localStorage.getItem('amap_key') || 'ee9c5479bba440e9f1aeb9390e47f9b9';
+    // ====================================
+
+    let map = null;
+    let geocoder = null;
+    let autoComplete = null;
+    let placeSearch = null;
+    let drivingRoute = null;
+    let transitRoute = null;
+    let walkingRoute = null;
+    let ridingRoute = null;
+    let trafficLayer = null;
+
+    let currentFocus = 'start';
+    let currentTransportMode = 'driving';
+    let startLocation = null;
+    let endLocation = null;
+    let startAddress = '';
+    let endAddress = '';
+    let routeDuration = 0;
+    let routeDistance = 0;
+
+    let alarmTimer = null;
+    let countdownTimer = null;
+    let alarmAudio = null;
+    let vibrateInterval = null;
+
+    let favorites = JSON.parse(localStorage.getItem('favorites') || '[]');
+    let history = JSON.parse(localStorage.getItem('history') || '[]');
+
+    // 初始化
+    window.onload = function() {
+      initUI();
+      if (AMAP_KEY) {
+        loadAmapScript();
+      } else {
+        showKeyConfigTip();
+      }
+    };
+
+    function initUI() {
+      renderFavorites();
+      renderHistory();
+      
+      const now = new Date();
+      now.setMinutes(now.getMinutes() + 30);
+      document.getElementById('arrival-time').value = formatTime(now);
+      
+      document.getElementById('advance-time').addEventListener('change', function() {
+        const customWrap = document.getElementById('custom-advance-wrap');
+        customWrap.classList.toggle('hidden', this.value !== 'custom');
+        updateRouteInfo();
+      });
+      
+      document.getElementById('custom-advance').addEventListener('input', updateRouteInfo);
+      document.getElementById('arrival-time').addEventListener('change', updateRouteInfo);
+
+      document.addEventListener('click', function(e) {
+        if (!e.target.closest('#start-input') && !e.target.closest('#start-suggestions')) {
+          document.getElementById('start-suggestions').classList.add('hidden');
+        }
+        if (!e.target.closest('#end-input') && !e.target.closest('#end-suggestions')) {
+          document.getElementById('end-suggestions').classList.add('hidden');
+        }
+        if (!e.target.closest('#fav-address') && !e.target.closest('#fav-suggestions')) {
+          document.getElementById('fav-suggestions').classList.add('hidden');
+        }
+      });
+    }
+
+    function showKeyConfigTip() {
+      document.getElementById('key-config-tip').classList.remove('hidden');
+      document.getElementById('map-container').innerHTML = '<div class="w-full h-full flex items-center justify-center bg-gray-100 text-gray-400"><p>请先配置高德地图 Key</p></div>';
+    }
+
+    function saveAmapKey() {
+      const key = document.getElementById('key-input').value.trim();
+      if (!key) {
+        alert('请输入 Key');
+        return;
+      }
+      AMAP_KEY = key;
+      localStorage.setItem('amap_key', key);
+      document.getElementById('key-config-tip').classList.add('hidden');
+      loadAmapScript();
+    }
+
+    function loadAmapScript() {
+      const script = document.createElement('script');
+      script.src = `https://webapi.amap.com/maps?v=2.0&key=${AMAP_KEY}&plugin=AMap.Geocoder,AMap.AutoComplete,AMap.PlaceSearch,AMap.Driving,AMap.Transfer,AMap.Walking,AMap.Riding,AMap.TrafficLayer`;
+      script.onload = initMap;
+      script.onerror = function() {
+        alert('高德地图加载失败，请检查 Key 是否正确');
+        showKeyConfigTip();
+      };
+      document.head.appendChild(script);
+    }
+
+    function initMap() {
+      map = new AMap.Map('map-container', {
+        zoom: 12,
+        center: [116.397428, 39.90923],
+        mapStyle: 'amap://styles/normal'
+      });
+
+      geocoder = new AMap.Geocoder();
+      autoComplete = new AMap.AutoComplete();
+      placeSearch = new AMap.PlaceSearch({ map: null });
+
+      trafficLayer = new AMap.TrafficLayer();
+      trafficLayer.setMap(map);
+
+      drivingRoute = new AMap.Driving({ map: map, hideMarkers: false });
+      transitRoute = new AMap.Transfer({ map: map, hideMarkers: false, city: '全国' });
+      walkingRoute = new AMap.Walking({ map: map, hideMarkers: false });
+      ridingRoute = new AMap.Riding({ map: map, hideMarkers: false });
+    }
+
+    function onAddressInput(type) {
+      const input = document.getElementById(type + '-input');
+      const suggestions = document.getElementById(type + '-suggestions');
+      const keyword = input.value.trim();
+
+      if (!keyword || !autoComplete) {
+        suggestions.classList.add('hidden');
+        return;
+      }
+
+      autoComplete.search(keyword, function(status, result) {
+        if (status === 'complete' && result.tips && result.tips.length > 0) {
+          let html = '';
+          result.tips.forEach(function(tip) {
+            if (tip.location) {
+              html += `<div class="px-4 py-3 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-b-0" 
+                            onclick="selectAddress('${type}', '${tip.name.replace(/'/g, "\\'")}', ${tip.location.lng}, ${tip.location.lat}, '${(tip.district || '').replace(/'/g, "\\'")}')">
+                <p class="text-sm text-gray-800">${tip.name}</p>
+                <p class="text-xs text-gray-500">${tip.district || ''}</p>
+              </div>`;
+            }
+          });
+          suggestions.innerHTML = html;
+          suggestions.classList.remove('hidden');
+        } else {
+          suggestions.classList.add('hidden');
+        }
+      });
+    }
+
+    function selectAddress(type, name, lng, lat, district) {
+      const input = document.getElementById(type + '-input');
+      const fullAddress = district ? district + ' ' + name : name;
+      input.value = fullAddress;
+      document.getElementById(type + '-suggestions').classList.add('hidden');
+
+      if (type === 'start') {
+        startLocation = [lng, lat];
+        startAddress = fullAddress;
+      } else {
+        endLocation = [lng, lat];
+        endAddress = fullAddress;
+      }
+
+      if (startLocation && endLocation) {
+        planRoute();
+      }
+    }
+
+    function setTransportMode(mode) {
+      currentTransportMode = mode;
+      document.querySelectorAll('.transport-btn').forEach(btn => {
+        btn.classList.remove('bg-blue-500', 'text-white');
+        btn.classList.add('bg-gray-100', 'text-gray-600');
+      });
+      const activeBtn = document.getElementById('btn-' + mode);
+      activeBtn.classList.remove('bg-gray-100', 'text-gray-600');
+      activeBtn.classList.add('bg-blue-500', 'text-white');
+
+      if (startLocation && endLocation) {
+        planRoute();
+      }
+    }
+
+    function planRoute() {
+      if (!startLocation || !endLocation) return;
+
+      clearAllRoutes();
+
+      const start = startLocation;
+      const end = endLocation;
+
+      let routeService;
+      switch (currentTransportMode) {
+        case 'driving':
+          routeService = drivingRoute;
+          break;
+        case 'transit':
+        case 'subway':
+          routeService = transitRoute;
+          break;
+        case 'walking':
+          routeService = walkingRoute;
+          break;
+        case 'riding':
+          routeService = ridingRoute;
+          break;
+        default:
+          routeService = drivingRoute;
+      }
+
+      const onComplete = function(data) {
+        handleRouteResult(data);
+      };
+      const onError = function(data) {
+        console.error('路线规划失败', data);
+        alert('路线规划失败，请检查地址是否正确');
+      };
+
+      if (currentTransportMode === 'transit' || currentTransportMode === 'subway') {
+        routeService.search(start, end, function(status, result) {
+          if (status === 'complete') {
+            handleRouteResult(result, 'transit');
+          } else {
+            onError(result);
+          }
+        });
+      } else {
+        routeService.search(start, end, function(status, result) {
+          if (status === 'complete') {
+            handleRouteResult(result, currentTransportMode);
+          } else {
+            onError(result);
+          }
+        });
+      }
+    }
+
+    function handleRouteResult(result, mode) {
+      let routes;
+      if (mode === 'transit' || mode === 'subway') {
+        routes = result.plans || [];
+        if (routes.length > 0) {
+          routeDuration = routes[0].duration || 0;
+          routeDistance = routes[0].distance || 0;
+        }
+      } else {
+        routes = result.routes || [];
+        if (routes.length > 0) {
+          routeDuration = routes[0].time || 0;
+          routeDistance = routes[0].distance || 0;
+        }
+      }
+
+      if (routes.length === 0) {
+        alert('未找到合适的路线');
+        return;
+      }
+
+      addToHistory();
+      updateRouteInfo();
+      updateTrafficStatus();
+    }
+
+    function clearAllRoutes() {
+      if (drivingRoute) drivingRoute.clear();
+      if (transitRoute) transitRoute.clear();
+      if (walkingRoute) walkingRoute.clear();
+      if (ridingRoute) ridingRoute.clear();
+    }
+
+    function updateRouteInfo() {
+      const infoDiv = document.getElementById('route-info');
+      if (!routeDuration || !routeDistance) {
+        infoDiv.classList.add('hidden');
+        return;
+      }
+
+      infoDiv.classList.remove('hidden');
+
+      const durationMin = Math.round(routeDuration / 60);
+      document.getElementById('info-duration').textContent = durationMin + ' 分钟';
+
+      const distKm = (routeDistance / 1000).toFixed(1);
+      document.getElementById('info-distance').textContent = distKm + ' 公里';
+
+      const arrivalTimeStr = document.getElementById('arrival-time').value;
+      if (arrivalTimeStr) {
+        const arrivalTime = parseTime(arrivalTimeStr);
+        const departureTime = new Date(arrivalTime.getTime() - routeDuration * 1000);
+        document.getElementById('info-departure').textContent = formatTime(departureTime);
+        document.getElementById('info-arrival').textContent = arrivalTimeStr;
+      } else {
+        const now = new Date();
+        const arrivalTime = new Date(now.getTime() + routeDuration * 1000);
+        document.getElementById('info-departure').textContent = '现在出发';
+        document.getElementById('info-arrival').textContent = formatTime(arrivalTime);
+      }
+    }
+
+    function updateTrafficStatus() {
+      const trafficEl = document.getElementById('traffic-status');
+      if (currentTransportMode === 'driving') {
+        trafficEl.innerHTML = '<span class="inline-flex items-center"><span class="w-2 h-2 bg-green-500 rounded-full mr-2"></span>实时路况已开启</span>';
+      } else {
+        trafficEl.innerHTML = '<span class="text-gray-400">当前交通方式无实时路况</span>';
+      }
+    }
+
+    function setAlarm() {
+      if (!startLocation || !endLocation) {
+        alert('请先选择出发地和目的地');
+        return;
+      }
+      if (!routeDuration) {
+        alert('请先规划路线');
+        return;
+      }
+
+      const arrivalTimeStr = document.getElementById('arrival-time').value;
+      if (!arrivalTimeStr) {
+        alert('请设置目标到达时间');
+        return;
+      }
+
+      let advanceMin;
+      const advanceSelect = document.getElementById('advance-time').value;
+      if (advanceSelect === 'custom') {
+        advanceMin = parseInt(document.getElementById('custom-advance').value) || 10;
+      } else {
+        advanceMin = parseInt(advanceSelect);
+      }
+
+      const arrivalTime = parseTime(arrivalTimeStr);
+      const departureTime = new Date(arrivalTime.getTime() - routeDuration * 1000);
+      const alarmTime = new Date(departureTime.getTime() - advanceMin * 60 * 1000);
+
+      const now = new Date();
+      if (alarmTime <= now) {
+        alert('提醒时间已过，请设置稍后的到达时间');
+        return;
+      }
+
+      if (alarmTimer) clearTimeout(alarmTimer);
+      if (countdownTimer) clearInterval(countdownTimer);
+
+      const delay = alarmTime.getTime() - now.getTime();
+      alarmTimer = setTimeout(triggerAlarm, delay);
+
+      document.getElementById('set-alarm-btn').classList.add('hidden');
+      document.getElementById('countdown-display').classList.remove('hidden');
+      updateCountdown();
+      countdownTimer = setInterval(updateCountdown, 1000);
+
+      alert('提醒已设置！请保持页面打开，到点会提醒您。');
+    }
+
+    function cancelAlarm() {
+      if (alarmTimer) {
+        clearTimeout(alarmTimer);
+        alarmTimer = null;
+      }
+      if (countdownTimer) {
+        clearInterval(countdownTimer);
+        countdownTimer = null;
+      }
+      document.getElementById('set-alarm-btn').classList.remove('hidden');
+      document.getElementById('countdown-display').classList.add('hidden');
+    }
+
+    function updateCountdown() {
+      const arrivalTimeStr = document.getElementById('arrival-time').value;
+      if (!arrivalTimeStr || !routeDuration) return;
+
+      let advanceMin;
+      const advanceSelect = document.getElementById('advance-time').value;
+      if (advanceSelect === 'custom') {
+        advanceMin = parseInt(document.getElementById('custom-advance').value) || 10;
+      } else {
+        advanceMin = parseInt(advanceSelect);
+      }
+
+      const arrivalTime = parseTime(arrivalTimeStr);
+      const departureTime = new Date(arrivalTime.getTime() - routeDuration * 1000);
+      const alarmTime = new Date(departureTime.getTime() - advanceMin * 60 * 1000);
+
+      const now = new Date();
+      let diff = Math.max(0, alarmTime.getTime() - now.getTime());
+
+      const hours = Math.floor(diff / (1000 * 60 * 60));
+      const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+      const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+
+      document.getElementById('countdown-text').textContent = 
+        String(hours).padStart(2, '0') + ':' + 
+        String(minutes).padStart(2, '0') + ':' + 
+        String(seconds).padStart(2, '0');
+    }
+
+    function triggerAlarm() {
+      const modal = document.getElementById('alarm-modal');
+      modal.classList.remove('hidden');
+      
+      document.getElementById('alarm-destination').textContent = endAddress || '目的地';
+      
+      playAlarmSound();
+      startVibration();
+
+      if (countdownTimer) {
+        clearInterval(countdownTimer);
+        countdownTimer = null;
+      }
+    }
+
+    function playAlarmSound() {
+      try {
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        let isBeep = true;
+        
+        function beep() {
+          const oscillator = audioCtx.createOscillator();
+          const gainNode = audioCtx.createGain();
+          
+          oscillator.connect(gainNode);
+          gainNode.connect(audioCtx.destination);
+          
+          oscillator.frequency.value = isBeep ? 800 : 600;
+          oscillator.type = 'sine';
+          gainNode.gain.setValueAtTime(0.3, audioCtx.currentTime);
+          gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.5);
+          
+          oscillator.start(audioCtx.currentTime);
+          oscillator.stop(audioCtx.currentTime + 0.5);
+          
+          isBeep = !isBeep;
+        }
+        
+        beep();
+        alarmAudio = setInterval(beep, 600);
+      } catch (e) {
+        console.log('音频播放失败', e);
+      }
+    }
+
+    function startVibration() {
+      if ('vibrate' in navigator) {
+        vibrateInterval = setInterval(function() {
+          navigator.vibrate([200, 100, 200]);
+        }, 1000);
+        navigator.vibrate([200, 100, 200]);
+      }
+    }
+
+    function stopAlarm() {
+      const modal = document.getElementById('alarm-modal');
+      modal.classList.add('hidden');
+
+      if (alarmAudio) {
+        clearInterval(alarmAudio);
+        alarmAudio = null;
+      }
+      if (vibrateInterval) {
+        clearInterval(vibrateInterval);
+        vibrateInterval = null;
+      }
+      if ('vibrate' in navigator) {
+        navigator.vibrate(0);
+      }
+
+      document.getElementById('set-alarm-btn').classList.remove('hidden');
+      document.getElementById('countdown-display').classList.add('hidden');
+      
+      alarmTimer = null;
+    }
+
+    function showHelpModal() {
+      document.getElementById('help-modal').classList.remove('hidden');
+    }
+
+    function hideHelpModal() {
+      document.getElementById('help-modal').classList.add('hidden');
+    }
+
+    function renderFavorites() {
+      const list = document.getElementById('favorite-list');
+      if (favorites.length === 0) {
+        list.innerHTML = '<span class="text-gray-400 text-sm">暂无常用地址</span>';
+        return;
+      }
+
+      let html = '';
+      favorites.forEach(function(fav, index) {
+        html += `<div class="flex-shrink-0 group relative">
+          <button onclick="useFavorite(${index})" 
+                  class="px-4 py-2 bg-blue-50 text-blue-600 rounded-full text-sm hover:bg-blue-100 transition whitespace-nowrap">
+            ${fav.name}
+          </button>
+          <button onclick="deleteFavorite(${index}, event)" 
+                  class="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white rounded-full text-xs opacity-0 group-hover:opacity-100 transition flex items-center justify-center">
+            <i class="fas fa-times text-[10px]"></i>
+          </button>
+        </div>`;
+      });
+      list.innerHTML = html;
+    }
+
+    function useFavorite(index) {
+      const fav = favorites[index];
+      if (currentFocus === 'end') {
+        document.getElementById('end-input').value = fav.name + ' (' + fav.address + ')';
+        endAddress = fav.address;
+        if (fav.lng && fav.lat) {
+          endLocation = [fav.lng, fav.lat];
+        } else {
+          geocodeAddress(fav.address, 'end');
+        }
+      } else {
+        document.getElementById('start-input').value = fav.name + ' (' + fav.address + ')';
+        startAddress = fav.address;
+        if (fav.lng && fav.lat) {
+          startLocation = [fav.lng, fav.lat];
+        } else {
+          geocodeAddress(fav.address, 'start');
+        }
+      }
+
+      if (startLocation && endLocation) {
+        planRoute();
+      }
+    }
+
+    function deleteFavorite(index, event) {
+      event.stopPropagation();
+      if (confirm('确定删除这个常用地址吗？')) {
+        favorites.splice(index, 1);
+        localStorage.setItem('favorites', JSON.stringify(favorites));
+        renderFavorites();
+      }
+    }
+
+    function showAddFavoriteModal() {
+      document.getElementById('add-favorite-modal').classList.remove('hidden');
+      document.getElementById('fav-name').value = '';
+      document.getElementById('fav-address').value = '';
+      document.getElementById('fav-suggestions').classList.add('hidden');
+    }
+
+    function hideAddFavoriteModal() {
+      document.getElementById('add-favorite-modal').classList.add('hidden');
+    }
+
+    function onFavoriteAddressInput() {
+      const input = document.getElementById('fav-address');
+      const suggestions = document.getElementById('fav-suggestions');
+      const keyword = input.value.trim();
+
+      if (!keyword || !autoComplete) {
+        suggestions.classList.add('hidden');
+        return;
+      }
+
+      autoComplete.search(keyword, function(status, result) {
+        if (status === 'complete' && result.tips && result.tips.length > 0) {
+          let html = '';
+          result.tips.forEach(function(tip, i) {
+            if (tip.location) {
+              html += `<div class="px-4 py-2 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-b-0 text-sm" 
+                            onclick="selectFavAddress('${tip.name.replace(/'/g, "\\'")}', ${tip.location.lng}, ${tip.location.lat})">
+                ${tip.name}
+                <span class="text-gray-400 text-xs ml-2">${tip.district || ''}</span>
+              </div>`;
+            }
+          });
+          suggestions.innerHTML = html;
+          suggestions.classList.remove('hidden');
+        } else {
+          suggestions.classList.add('hidden');
+        }
+      });
+    }
+
+    let selectedFavLng = null;
+    let selectedFavLat = null;
+
+    function selectFavAddress(name, lng, lat) {
+      document.getElementById('fav-address').value = name;
+      document.getElementById('fav-suggestions').classList.add('hidden');
+      selectedFavLng = lng;
+      selectedFavLat = lat;
+    }
+
+    function saveFavorite() {
+      const name = document.getElementById('fav-name').value.trim();
+      const address = document.getElementById('fav-address').value.trim();
+
+      if (!name) {
+        alert('请输入地址名称');
+        return;
+      }
+      if (!address) {
+        alert('请输入详细地址');
+        return;
+      }
+
+      const fav = { name: name, address: address };
+      
+      if (selectedFavLng && selectedFavLat) {
+        fav.lng = selectedFavLng;
+        fav.lat = selectedFavLat;
+        favorites.push(fav);
+        localStorage.setItem('favorites', JSON.stringify(favorites));
+        renderFavorites();
+        hideAddFavoriteModal();
+        selectedFavLng = null;
+        selectedFavLat = null;
+      } else {
+        geocoder.getLocation(address, function(status, result) {
+          if (status === 'complete' && result.geocodes.length > 0) {
+            const loc = result.geocodes[0].location;
+            fav.lng = loc.lng;
+            fav.lat = loc.lat;
+          }
+          favorites.push(fav);
+          localStorage.setItem('favorites', JSON.stringify(favorites));
+          renderFavorites();
+          hideAddFavoriteModal();
+        });
+      }
+    }
+
+    function geocodeAddress(address, type) {
+      if (!geocoder) return;
+      geocoder.getLocation(address, function(status, result) {
+        if (status === 'complete' && result.geocodes.length > 0) {
+          const loc = result.geocodes[0].location;
+          if (type === 'start') {
+            startLocation = [loc.lng, loc.lat];
+          } else {
+            endLocation = [loc.lng, loc.lat];
+          }
+          if (startLocation && endLocation) {
+            planRoute();
+          }
+        }
+      });
+    }
+
+    function addToHistory() {
+      if (!startAddress || !endAddress) return;
+
+      const record = {
+        start: startAddress,
+        end: endAddress,
+        startLng: startLocation[0],
+        startLat: startLocation[1],
+        endLng: endLocation[0],
+        endLat: endLocation[1],
+        time: Date.now()
+      };
+
+      history = history.filter(function(h) {
+        return !(h.start === record.start && h.end === record.end);
+      });
+
+      history.unshift(record);
+      if (history.length > 5) {
+        history = history.slice(0, 5);
+      }
+
+      localStorage.setItem('history', JSON.stringify(history));
+      renderHistory();
+    }
+
+    function renderHistory() {
+      const list = document.getElementById('history-list');
+      if (history.length === 0) {
+        list.innerHTML = '<p class="text-gray-400 text-sm text-center py-4">暂无历史记录</p>';
+        return;
+      }
+
+      let html = '';
+      history.forEach(function(item, index) {
+        html += `<div onclick="useHistory(${index})" 
+                    class="flex items-center p-3 bg-gray-50 rounded-xl cursor-pointer hover:bg-gray-100 transition">
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center text-sm mb-1">
+              <span class="w-2 h-2 bg-green-500 rounded-full mr-2 flex-shrink-0"></span>
+              <span class="text-gray-700 truncate">${item.start}</span>
+            </div>
+            <div class="flex items-center text-sm">
+              <span class="w-2 h-2 bg-red-500 rounded-full mr-2 flex-shrink-0"></span>
+              <span class="text-gray-700 truncate">${item.end}</span>
+            </div>
+          </div>
+          <i class="fas fa-chevron-right text-gray-300 ml-2"></i>
+        </div>`;
+      });
+      list.innerHTML = html;
+    }
+
+    function useHistory(index) {
+      const item = history[index];
+      
+      document.getElementById('start-input').value = item.start;
+      document.getElementById('end-input').value = item.end;
+      
+      startAddress = item.start;
+      endAddress = item.end;
+      startLocation = [item.startLng, item.startLat];
+      endLocation = [item.endLng, item.endLat];
+      
+      planRoute();
+    }
+
+    function clearHistory() {
+      if (history.length === 0) return;
+      if (confirm('确定清空所有历史记录吗？')) {
+        history = [];
+        localStorage.setItem('history', JSON.stringify(history));
+        renderHistory();
+      }
+    }
+
+    function autoLocate(type) {
+      if (!navigator.geolocation) {
+        alert('您的浏览器不支持定位功能');
+        return;
+      }
+
+      const btn = event.currentTarget;
+      const originalHTML = btn.innerHTML;
+      btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+      btn.disabled = true;
+
+      navigator.geolocation.getCurrentPosition(
+        function(position) {
+          const lng = position.coords.longitude;
+          const lat = position.coords.latitude;
+          
+          if (geocoder) {
+            geocoder.getAddress([lng, lat], function(status, result) {
+              btn.innerHTML = originalHTML;
+              btn.disabled = false;
+              
+              if (status === 'complete' && result.regeocode) {
+                const address = result.regeocode.formattedAddress;
+                document.getElementById(type + '-input').value = address;
+                
+                if (type === 'start') {
+                  startLocation = [lng, lat];
+                  startAddress = address;
+                } else {
+                  endLocation = [lng, lat];
+                  endAddress = address;
+                }
+                
+                if (map) {
+                  map.setCenter([lng, lat]);
+                  map.setZoom(15);
+                }
+                
+                if (startLocation && endLocation) {
+                  planRoute();
+                }
+              } else {
+                alert('地址解析失败');
+              }
+            });
+          } else {
+            btn.innerHTML = originalHTML;
+            btn.disabled = false;
+            alert('地图未加载完成，请稍后再试');
+          }
+        },
+        function(error) {
+          btn.innerHTML = originalHTML;
+          btn.disabled = false;
+          
+          let msg = '定位失败';
+          switch (error.code) {
+            case error.PERMISSION_DENIED:
+              msg = '您拒绝了定位请求，请在浏览器设置中允许定位';
+              break;
+            case error.POSITION_UNAVAILABLE:
+              msg = '位置信息不可用';
+              break;
+            case error.TIMEOUT:
+              msg = '定位超时，请重试';
+              break;
+          }
+          alert(msg);
+        },
+        {
+          enableHighAccuracy: true,
+          timeout: 10000,
+          maximumAge: 0
+        }
+      );
+    }
+
+    function swapAddresses() {
+      const tempLoc = startLocation;
+      const tempAddr = startAddress;
+      
+      startLocation = endLocation;
+      startAddress = endAddress;
+      endLocation = tempLoc;
+      endAddress = tempAddr;
+      
+      const startInput = document.getElementById('start-input');
+      const endInput = document.getElementById('end-input');
+      const tempVal = startInput.value;
+      startInput.value = endInput.value;
+      endInput.value = tempVal;
+      
+      if (startLocation && endLocation) {
+        planRoute();
+      }
+    }
+
+    function formatTime(date) {
+      return String(date.getHours()).padStart(2, '0') + ':' + String(date.getMinutes()).padStart(2, '0');
+    }
+
+    function parseTime(timeStr) {
+      const parts = timeStr.split(':');
+      const date = new Date();
+      date.setHours(parseInt(parts[0]), parseInt(parts[1]), 0, 0);
+      if (date <= new Date()) {
+        date.setDate(date.getDate() + 1);
+      }
+      return date;
+    }
+  </script>
+</body>
+</html>
